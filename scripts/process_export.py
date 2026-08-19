@@ -190,8 +190,8 @@ def generate_css():
 
 :root {
     --bg: #0a0a0b;
-    --card-bg: #141416;
-    --card-hover: #1a1a1d;
+    --card-bg: transparent;
+    --card-hover: rgba(255, 255, 255, 0.03);
     --text: #ffffff;
     --text-muted: #8b8b8e;
     --accent: #6366f1;
