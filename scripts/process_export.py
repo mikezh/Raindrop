@@ -630,9 +630,9 @@ def generate_index_html(collections, metadata, all_tags):
         safe_name = sanitize_filename(folder)
         folder_tabs += f'<a href="collections/{safe_name}.html" class="filter-tab">{html.escape(folder)}</a>'
     
-    # 生成标签过滤（显示前10个热门标签）
+    # 生成标签过滤（显示所有标签）
     tag_tabs = ""
-    sorted_tags = sorted(all_tags.items(), key=lambda x: len(x[1]), reverse=True)[:10]
+    sorted_tags = sorted(all_tags.items(), key=lambda x: len(x[1]), reverse=True)
     for tag, _ in sorted_tags:
         safe_tag = sanitize_filename(tag)
         tag_tabs += f'<a href="tags/{safe_tag}.html" class="filter-tab">{html.escape(tag)}</a>'
