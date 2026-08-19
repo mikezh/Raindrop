@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 
 class BookmarkHTMLParser(HTMLParser):
-    """解析 Netscape Bookmark HTML 格式"""
+    """解析 Netscape Bookmark HTML 格式（支持 Raindrop.io 扩展属性）"""
     
     def __init__(self):
         super().__init__()
@@ -34,13 +34,19 @@ class BookmarkHTMLParser(HTMLParser):
             self.in_h3 = True
         elif tag == "a":
             self.in_a = True
+            
+            # 解析标签（Raindrop 使用 TAGS 属性）
+            tags_str = attrs_dict.get("tags", "")
+            tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
+            
             self.current_bookmark = {
                 "title": "",
                 "link": attrs_dict.get("href", ""),
-                "tags": [],
+                "tags": tags,
                 "created": attrs_dict.get("add_date", ""),
-                "icon": attrs_dict.get("icon", ""),
-                "description": ""
+                "icon": attrs_dict.get("data-cover", "") or attrs_dict.get("icon", ""),  # Raindrop 使用 DATA-COVER
+                "description": "",
+                "important": attrs_dict.get("data-important", "false").lower() == "true"
             }
         elif tag == "dd":
             self.in_dd = True
@@ -68,10 +74,6 @@ class BookmarkHTMLParser(HTMLParser):
             self.current_folder = data
         elif self.in_a and self.current_bookmark:
             self.current_bookmark["title"] = data
-            if "#" in data:
-                parts = data.split("#")
-                self.current_bookmark["title"] = parts[0].strip()
-                self.current_bookmark["tags"] = [t.strip() for t in parts[1:] if t.strip()]
             self.current_bookmark["folder"] = self.current_folder
             self.bookmarks.append(self.current_bookmark)
             self.current_bookmark = None
@@ -422,6 +424,13 @@ body {
     border-radius: 10px;
     background: rgba(99, 102, 241, 0.15);
     color: var(--accent);
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.card-tag:hover {
+    background: var(--accent);
+    color: white;
 }
 
 .card-important {
@@ -588,7 +597,21 @@ body {
 """
 
 
-def generate_index_html(collections, metadata):
+def sort_bookmarks_by_time(bookmarks):
+    """按时间倒序排列书签（最新的在前）"""
+    def get_timestamp(bm):
+        created = bm.get("created", "")
+        if created:
+            try:
+                return int(created)
+            except:
+                return 0
+        return 0
+    
+    return sorted(bookmarks, key=get_timestamp, reverse=True)
+
+
+def generate_index_html(collections, metadata, all_tags):
     """生成主页"""
     all_bookmarks = []
     for folder, bookmarks in collections.items():
@@ -596,11 +619,21 @@ def generate_index_html(collections, metadata):
             bm["_folder"] = folder
             all_bookmarks.append(bm)
     
+    # 按时间倒序排列
+    all_bookmarks = sort_bookmarks_by_time(all_bookmarks)
+    
     # 生成收藏夹过滤标签
     folder_tabs = '<a href="#" class="filter-tab active" data-filter="all">全部</a>'
     for folder in collections.keys():
         safe_name = sanitize_filename(folder)
         folder_tabs += f'<a href="collections/{safe_name}.html" class="filter-tab">{html.escape(folder)}</a>'
+    
+    # 生成标签过滤（显示前10个热门标签）
+    tag_tabs = ""
+    sorted_tags = sorted(all_tags.items(), key=lambda x: len(x[1]), reverse=True)[:10]
+    for tag, _ in sorted_tags:
+        safe_tag = sanitize_filename(tag)
+        tag_tabs += f'<a href="tags/{safe_tag}.html" class="filter-tab">{html.escape(tag)}</a>'
     
     # 生成卡片
     cards_html = ""
@@ -629,6 +662,10 @@ def generate_index_html(collections, metadata):
                 {folder_tabs}
             </nav>
             
+            <nav class="filter-tabs">
+                {tag_tabs}
+            </nav>
+            
             <div class="search-wrapper">
                 <span class="search-icon">🔍</span>
                 <input type="text" class="search-input" id="search" placeholder="搜索书签...">
@@ -645,6 +682,10 @@ def generate_index_html(collections, metadata):
             <div class="stat">
                 <span class="stat-value">{metadata['total_collections']}</span>
                 <span class="stat-label">个收藏夹</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value">{len(all_tags)}</span>
+                <span class="stat-label">个标签</span>
             </div>
         </div>
         
@@ -666,9 +707,12 @@ def generate_index_html(collections, metadata):
 
 def generate_collection_html(folder_name, bookmarks, metadata):
     """生成收藏夹页面"""
+    # 按时间倒序排列
+    bookmarks = sort_bookmarks_by_time(bookmarks)
+    
     cards_html = ""
     for bm in bookmarks:
-        cards_html += generate_card_html(bm)
+        cards_html += generate_card_html(bm, tag_link_prefix="../tags/")
     
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -711,7 +755,7 @@ def generate_collection_html(folder_name, bookmarks, metadata):
 """
 
 
-def generate_card_html(bm):
+def generate_card_html(bm, tag_link_prefix="tags/"):
     """生成单个卡片 HTML"""
     title = bm.get("title", "无标题")
     link = bm.get("link", "#")
@@ -732,11 +776,11 @@ def generate_card_html(bm):
         first_char = title[0] if title else "📌"
         cover_html = f'<div class="card-no-cover"><span class="card-no-cover-text">{html.escape(first_char)}</span></div>'
     
-    # 标签
+    # 标签（可点击）
     tags_html = ""
     if tags:
         tags_html = '<div class="card-tags">' + "".join([
-            f'<span class="card-tag">{html.escape(tag)}</span>'
+            f'<a href="{tag_link_prefix}{sanitize_filename(tag)}.html" class="card-tag">{html.escape(tag)}</a>'
             for tag in tags[:3]
         ]) + '</div>'
     
@@ -751,6 +795,66 @@ def generate_card_html(bm):
         {tags_html}
     </div>
 </a>"""
+
+
+def generate_tag_html(tag, bookmarks, metadata, all_tags):
+    """生成标签页面"""
+    # 按时间倒序排列
+    bookmarks = sort_bookmarks_by_time(bookmarks)
+    
+    cards_html = ""
+    for bm in bookmarks:
+        cards_html += generate_card_html(bm, tag_link_prefix="../tags/")
+    
+    # 相关标签
+    related_tags_html = ""
+    sorted_tags = sorted(all_tags.items(), key=lambda x: len(x[1]), reverse=True)[:15]
+    for t, _ in sorted_tags:
+        safe_t = sanitize_filename(t)
+        active_class = " active" if t == tag else ""
+        related_tags_html += f'<a href="{safe_t}.html" class="filter-tab{active_class}">{html.escape(t)} ({len(all_tags[t])})</a>'
+    
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>#{html.escape(tag)} - {html.escape(metadata['title'])}</title>
+    <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+    <header class="header">
+        <div class="header-inner">
+            <a href="../index.html" class="logo">
+                <div class="logo-icon">📚</div>
+                <span>{html.escape(metadata['title'])}</span>
+            </a>
+            
+            <nav class="filter-tabs">
+                {related_tags_html}
+            </nav>
+        </div>
+    </header>
+    
+    <main class="main">
+        <div class="section-header">
+            <h1 class="section-title">
+                #{html.escape(tag)}
+                <span class="section-count">{len(bookmarks)} 个书签</span>
+            </h1>
+        </div>
+        
+        <div class="masonry">
+            {cards_html}
+        </div>
+    </main>
+    
+    <footer class="footer">
+        <p>最后更新: {metadata['export_time']}</p>
+    </footer>
+</body>
+</html>
+"""
 
 
 def generate_js():
@@ -799,6 +903,15 @@ def generate_html_site(collections, output_dir, title="我的书签收藏"):
     total_bookmarks = sum(len(bms) for bms in collections.values())
     total_collections = len(collections)
     
+    # 收集所有标签
+    all_tags = {}
+    for folder, bookmarks in collections.items():
+        for bm in bookmarks:
+            for tag in bm.get("tags", []):
+                if tag not in all_tags:
+                    all_tags[tag] = []
+                all_tags[tag].append(bm)
+    
     metadata = {
         "export_time": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "total_collections": total_collections,
@@ -808,7 +921,7 @@ def generate_html_site(collections, output_dir, title="我的书签收藏"):
     
     # 生成主页
     (output_path / "index.html").write_text(
-        generate_index_html(collections, metadata),
+        generate_index_html(collections, metadata, all_tags),
         encoding="utf-8"
     )
     
@@ -820,6 +933,17 @@ def generate_html_site(collections, output_dir, title="我的书签收藏"):
         safe_name = sanitize_filename(folder_name)
         (collections_dir / f"{safe_name}.html").write_text(
             generate_collection_html(folder_name, bookmarks, metadata),
+            encoding="utf-8"
+        )
+    
+    # 生成标签页面
+    tags_dir = output_path / "tags"
+    tags_dir.mkdir(exist_ok=True)
+    
+    for tag, bookmarks in all_tags.items():
+        safe_tag = sanitize_filename(tag)
+        (tags_dir / f"{safe_tag}.html").write_text(
+            generate_tag_html(tag, bookmarks, metadata, all_tags),
             encoding="utf-8"
         )
     
@@ -837,7 +961,7 @@ def generate_html_site(collections, output_dir, title="我的书签收藏"):
     )
     
     print(f"\n✅ 心情看板已生成到: {output_path}")
-    print(f"   📊 {total_collections} 个收藏夹, {total_bookmarks} 个书签")
+    print(f"   📊 {total_collections} 个收藏夹, {total_bookmarks} 个书签, {len(all_tags)} 个标签")
     
     return metadata
 
