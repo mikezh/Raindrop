@@ -624,12 +624,6 @@ def generate_index_html(collections, metadata, all_tags):
     # 按时间倒序排列
     all_bookmarks = sort_bookmarks_by_time(all_bookmarks)
     
-    # 生成收藏夹过滤标签
-    folder_tabs = '<a href="#" class="filter-tab active" data-filter="all">全部</a>'
-    for folder in collections.keys():
-        safe_name = sanitize_filename(folder)
-        folder_tabs += f'<a href="collections/{safe_name}.html" class="filter-tab">{html.escape(folder)}</a>'
-    
     # 生成标签过滤（显示所有标签）
     tag_tabs = ""
     sorted_tags = sorted(all_tags.items(), key=lambda x: len(x[1]), reverse=True)
@@ -648,7 +642,7 @@ def generate_index_html(collections, metadata, all_tags):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{html.escape(metadata['title'])}</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v={datetime.now().strftime('%Y%m%d%H%M%S')}">
     <meta property="og:title" content="{html.escape(metadata['title'])}">
     <meta property="og:description" content="{metadata['total_bookmarks']} 个精选书签">
 </head>
@@ -659,10 +653,6 @@ def generate_index_html(collections, metadata, all_tags):
                 <div class="logo-icon">📚</div>
                 <span>{html.escape(metadata['title'])}</span>
             </a>
-            
-            <nav class="filter-tabs">
-                {folder_tabs}
-            </nav>
             
             <nav class="filter-tabs">
                 {tag_tabs}
@@ -680,10 +670,6 @@ def generate_index_html(collections, metadata, all_tags):
             <div class="stat">
                 <span class="stat-value">{metadata['total_bookmarks']}</span>
                 <span class="stat-label">个书签</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value">{metadata['total_collections']}</span>
-                <span class="stat-label">个收藏夹</span>
             </div>
             <div class="stat">
                 <span class="stat-value">{len(all_tags)}</span>
