@@ -435,15 +435,18 @@ body {
     color: white;
 }
 
+/* Important bookmark - just a subtle indicator, no border */
 .card-important {
-    border: 2px solid #f59e0b;
+    /* No border, keep clean look */
 }
 
 .card-important .card-body::before {
     content: "⭐";
     position: absolute;
-    top: 10px;
-    right: 10px;
+    top: 8px;
+    right: 8px;
+    font-size: 12px;
+    opacity: 0.7;
 }
 
 /* Collection Section */
